@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  jamie-bot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.bot
+    env_file: .env
+    restart: unless-stopped
+    depends_on:
+      - jamie-agent
+    networks:
+      - jamie-net
+
+  jamie-agent:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent
+    env_file: .env
+    privileged: true  # For Docker-in-Docker CUA sandbox
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./browser-profile:/home/jamie/.config/chromium
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - jamie-net
+
+networks:
+  jamie-net:
+    driver: bridge
