@@ -334,3 +334,21 @@ JAMIE_CUA_ENDPOINT=http://localhost:8000
 
 *Created: 2026-02-07*
 *Authors: Rodrigo 🦞 + Jesse*
+
+---
+
+## Additional Requirements (Added 2026-02-07)
+
+### Authentication
+- **Claude Code Subscription Auth:** Jamie should support authentication via Claude Code subscription, not just raw API keys
+- This enables users with Claude Code subscriptions to use Jamie without separate Anthropic API billing
+
+### OpenClaw Integration
+- **Component Architecture:** Jamie should work as a component/plugin of OpenClaw
+- This means Jamie can be triggered via OpenClaw's messaging system, cron jobs, or direct commands
+- Consider: OpenClaw skill, channel plugin, or standalone service that OpenClaw can invoke
+
+### Implications
+1. Auth layer should abstract between API key and Claude Code subscription
+2. Entry points should support both standalone execution and OpenClaw invocation
+3. Configuration should support OpenClaw environment variables where applicable
