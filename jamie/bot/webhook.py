@@ -4,7 +4,7 @@ from aiohttp import web
 from typing import Callable, Awaitable, Optional
 import asyncio
 
-from jamie.shared.models import StatusUpdate
+from jamie.shared.models import StatusUpdate, HealthResponse
 from jamie.shared.logging import get_logger
 
 log = get_logger(__name__)
@@ -74,7 +74,12 @@ class WebhookReceiver:
     
     async def _handle_health(self, request: web.Request) -> web.Response:
         """Health check endpoint."""
-        return web.json_response({"status": "healthy"})
+        response = HealthResponse(
+            status="healthy",
+            version="0.1.0",
+            active_sessions=0,  # Webhook receiver doesn't track sessions
+        )
+        return web.json_response(response.model_dump())
     
     def set_callback(self, callback: StatusCallback) -> None:
         """Set the callback for status updates."""
