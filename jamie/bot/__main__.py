@@ -11,7 +11,7 @@ import sys
 from typing import Optional
 
 from jamie.bot.bot import JamieBot, create_bot
-from jamie.shared.config import get_bot_config, BotConfig
+from jamie.shared.config import get_bot_config, get_observability_config, BotConfig
 from jamie.shared.logging import get_logger, setup_logging
 
 log = get_logger(__name__)
@@ -19,8 +19,13 @@ log = get_logger(__name__)
 
 def main() -> None:
     """Main entry point for the bot."""
-    # Configure structured logging
-    setup_logging()
+    # Configure structured logging from observability config
+    try:
+        obs_config = get_observability_config()
+        setup_logging(level=obs_config.log_level, json_output=obs_config.log_json)
+    except Exception:
+        # Fall back to defaults if config fails
+        setup_logging()
     
     log.info("jamie_bot_starting")
     

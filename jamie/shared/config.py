@@ -28,6 +28,25 @@ class BotConfig(BaseSettings):
     webhook_port: int = Field(default=8080, description="Webhook listener port")
 
 
+class ObservabilityConfig(BaseSettings):
+    """Configuration for logging and metrics."""
+    
+    model_config = SettingsConfigDict(
+        env_prefix="JAMIE_",
+        env_file=".env",
+        extra="ignore",
+    )
+    
+    # Logging
+    log_level: str = Field(default="INFO", description="Log level (DEBUG, INFO, WARNING, ERROR)")
+    log_json: bool = Field(default=False, description="Output logs in JSON format")
+    log_include_trace: bool = Field(default=False, description="Include trace IDs in logs")
+    
+    # Metrics
+    metrics_enabled: bool = Field(default=True, description="Enable metrics collection")
+    metrics_endpoint: bool = Field(default=True, description="Expose /metrics endpoint")
+
+
 class AgentConfig(BaseSettings):
     """Configuration for CUA streaming agent."""
     
@@ -74,3 +93,8 @@ def get_bot_config() -> BotConfig:
 def get_agent_config() -> AgentConfig:
     """Get agent configuration from environment."""
     return AgentConfig()
+
+
+def get_observability_config() -> ObservabilityConfig:
+    """Get observability configuration from environment."""
+    return ObservabilityConfig()

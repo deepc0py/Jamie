@@ -63,8 +63,13 @@ class StopRequest(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    """Health check response."""
+    """Health check response with metrics summary."""
 
     status: str = "healthy"
     version: str = "0.1.0"
     active_sessions: int = 0
+    uptime_seconds: Optional[float] = None
+    streams_total: Optional[int] = None
+    streams_success: Optional[int] = None
+    streams_failed: Optional[int] = None
+    success_rate_percent: Optional[float] = None
