@@ -1,5 +1,6 @@
 """Jamie Discord bot package."""
 
+from .bot import JamieBot, create_bot
 from .cua_client import CUAClient, CUAClientConfig, CUAClientError
 from .url_patterns import (
     StreamingService,
@@ -11,6 +12,8 @@ from .url_patterns import (
 from .webhook import WebhookReceiver, StatusCallback
 
 __all__ = [
+    "JamieBot",
+    "create_bot",
     "CUAClient",
     "CUAClientConfig",
     "CUAClientError",
