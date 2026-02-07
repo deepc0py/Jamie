@@ -171,6 +171,37 @@ class MessageHandler:
             service=parsed.service.value,
         )
 
+        # Delegate to stream request handler
+        await self._handle_stream_request(
+            message=message,
+            user_id=user_id,
+            url=parsed.normalized or url,
+            service=parsed.service,
+        )
+
+    async def _handle_stream_request(
+        self,
+        message: discord.Message,
+        user_id: str,
+        url: str,
+        service: StreamingService,
+    ) -> None:
+        """Handle stream request after URL validation.
+        
+        Orchestrates the full stream request flow:
+        1. Check if user is already streaming (busy check)
+        2. Find user's voice channel
+        3. Create session via session_manager
+        4. Call CUA client to start stream
+        5. Handle response/errors with appropriate user messages
+        6. Update session state based on CUA response
+        
+        Args:
+            message: Discord message that triggered the request
+            user_id: ID of the requesting user
+            url: Normalized URL to stream
+            service: Detected streaming service type
+        """
         # Check if user already has an active stream
         existing_session = await self.session_manager.get_user_session(user_id)
         if existing_session:
@@ -192,16 +223,17 @@ class MessageHandler:
             )
             return
 
-        # Create session
+        # Create session via session_manager
         try:
             session = await self.session_manager.create_session(
                 requester_id=user_id,
                 guild_id=str(guild.id),
                 channel_id=str(voice_channel.id),
                 channel_name=voice_channel.name,
-                url=parsed.normalized or url,
+                url=url,
             )
         except ValueError as e:
+            log.warning("session_create_failed", user_id=user_id, error=str(e))
             await message.reply(str(e))
             return
 
@@ -221,7 +253,7 @@ class MessageHandler:
         # Create stream request
         stream_request = StreamRequest(
             session_id=session.session_id,
-            url=parsed.normalized or url,
+            url=url,
             guild_id=str(guild.id),
             channel_id=str(voice_channel.id),
             channel_name=voice_channel.name,
@@ -230,15 +262,15 @@ class MessageHandler:
         )
 
         # Send acknowledgment
-        service_name = parsed.service.value.title()
-        if parsed.service == StreamingService.GENERIC:
+        service_name = service.value.title()
+        if service == StreamingService.GENERIC:
             service_name = "Link"
 
         await message.reply(
             f"🎬 Starting {service_name} stream to **{voice_channel.name}** in {guild.name}..."
         )
 
-        # Request stream from CUA
+        # Call CUA client to start stream
         try:
             await self.session_manager.update_session(
                 session.session_id,
@@ -247,16 +279,23 @@ class MessageHandler:
             
             response = await self.cua_client.start_stream(stream_request)
             
+            # Update session state based on CUA response
             log.info(
                 "stream_requested",
                 session_id=session.session_id,
                 response_status=response.status.value,
+                message=response.message,
             )
+            
+            # Session will be updated to ACTIVE via webhook when CUA confirms streaming
+            
         except CUAClientError as e:
+            # Handle CUA errors with appropriate user messages
             log.error(
                 "stream_request_failed",
                 session_id=session.session_id,
                 error=str(e),
+                error_code=e.code.value if hasattr(e, 'code') else None,
             )
             await self.session_manager.update_session(
                 session.session_id,
