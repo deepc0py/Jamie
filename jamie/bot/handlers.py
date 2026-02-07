@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
+from jamie.bot import messages as msg
 from jamie.bot.session import SessionManager, SessionState
 from jamie.bot.cua_client import CUAClient, CUAClientError
 from jamie.bot.url_patterns import extract_urls, parse_url, StreamingService
@@ -74,7 +75,7 @@ class MessageHandler:
         
         session = await self.session_manager.get_user_session(user_id)
         if not session:
-            await message.reply("You don't have an active stream to stop.")
+            await message.reply(msg.no_active_stream())
             return
 
         log.info("stop_requested", user_id=user_id, session_id=session.session_id)
@@ -85,10 +86,10 @@ class MessageHandler:
                 session.session_id,
                 state=SessionState.STOPPING,
             )
-            await message.reply("🛑 Stopping your stream...")
+            await message.reply(msg.stream_stopping())
         except CUAClientError as e:
             log.error("stop_failed", user_id=user_id, error=str(e))
-            await message.reply(f"Failed to stop stream: {e.message}")
+            await message.reply(msg.error_stop_failed(e.message))
 
     async def _handle_status(self, message: discord.Message) -> None:
         """Handle status command - show user's stream status."""
@@ -96,50 +97,21 @@ class MessageHandler:
         
         session = await self.session_manager.get_user_session(user_id)
         if not session:
-            await message.reply("You don't have an active stream.")
+            await message.reply(msg.no_active_stream())
             return
 
-        status_emoji = {
-            SessionState.CREATED: "🆕",
-            SessionState.REQUESTING: "⏳",
-            SessionState.ACTIVE: "🎬",
-            SessionState.STOPPING: "🛑",
-            SessionState.COMPLETED: "✅",
-            SessionState.FAILED: "❌",
-        }
-        
-        emoji = status_emoji.get(session.state, "❓")
-        status_msg = (
-            f"{emoji} **Stream Status**\n"
-            f"• Channel: {session.channel_name}\n"
-            f"• URL: {session.url}\n"
-            f"• Status: {session.state.value}"
+        await message.reply(
+            msg.status_message(
+                state=session.state,
+                channel_name=session.channel_name,
+                url=session.url,
+                error_message=session.error_message,
+            )
         )
-        
-        if session.error_message:
-            status_msg += f"\n• Error: {session.error_message}"
-        
-        await message.reply(status_msg)
 
     async def _handle_help(self, message: discord.Message) -> None:
         """Handle help command - show usage instructions."""
-        help_text = (
-            "🎬 **Jamie - Discord Stream Bot**\n\n"
-            "**How to use:**\n"
-            "1. Join a voice channel in a server where I'm a member\n"
-            "2. DM me a URL to stream\n\n"
-            "**Supported services:**\n"
-            "• YouTube (videos, shorts, live)\n"
-            "• Twitch (channels)\n"
-            "• Vimeo\n"
-            "• Wikipedia\n"
-            "• Any other URL\n\n"
-            "**Commands:**\n"
-            "• `stop` - Stop your current stream\n"
-            "• `status` - Check your stream status\n"
-            "• `help` - Show this message"
-        )
-        await message.reply(help_text)
+        await message.reply(msg.HELP_MESSAGE)
 
     async def _handle_url(self, message: discord.Message) -> None:
         """Handle URL message - start streaming if valid."""
@@ -150,10 +122,7 @@ class MessageHandler:
         urls = extract_urls(content)
         if not urls:
             # No URL found - might be an unknown command
-            await message.reply(
-                "I didn't find a URL in your message. "
-                "Send me a link to stream, or type `help` for usage."
-            )
+            await message.reply(msg.error_no_url_found())
             return
 
         # Use the first URL found
@@ -161,7 +130,7 @@ class MessageHandler:
         parsed = parse_url(url)
         
         if not parsed:
-            await message.reply(f"That doesn't look like a valid URL: {url}")
+            await message.reply(msg.error_invalid_url(url))
             return
 
         log.info(
@@ -205,10 +174,7 @@ class MessageHandler:
         # Check if user already has an active stream
         existing_session = await self.session_manager.get_user_session(user_id)
         if existing_session:
-            await message.reply(
-                f"You already have an active stream to **{existing_session.channel_name}**.\n"
-                "Send `stop` to end it first, or `status` to check on it."
-            )
+            await message.reply(msg.error_already_streaming(existing_session.channel_name))
             return
 
         # Find user's voice channel
@@ -217,10 +183,7 @@ class MessageHandler:
         )
 
         if not voice_channel or not guild:
-            await message.reply(
-                "You need to be in a voice channel for me to stream there!\n"
-                "Join a voice channel in a server where I'm a member, then send the URL again."
-            )
+            await message.reply(msg.error_not_in_voice())
             return
 
         # Create session via session_manager
@@ -267,7 +230,7 @@ class MessageHandler:
             service_name = "Link"
 
         await message.reply(
-            f"🎬 Starting {service_name} stream to **{voice_channel.name}** in {guild.name}..."
+            msg.stream_starting(service_name, voice_channel.name, guild.name)
         )
 
         # Call CUA client to start stream
@@ -302,4 +265,4 @@ class MessageHandler:
                 state=SessionState.FAILED,
                 error=e.message,
             )
-            await message.channel.send(f"❌ Failed to start stream: {e.message}")
+            await message.channel.send(msg.error_stream_failed(e.message))
