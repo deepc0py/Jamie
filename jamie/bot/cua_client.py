@@ -1,12 +1,15 @@
 """HTTP client for CUA agent controller."""
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Callable, Optional, TypeVar
 
 import aiohttp
 
 from jamie.shared.errors import ErrorCode, JamieError, is_retryable
+
+log = logging.getLogger(__name__)
 
 
 class CUAClientError(JamieError):
@@ -69,6 +72,9 @@ class CUAClient:
     ) -> T:
         """Execute operation with retry logic for transient failures.
 
+        Uses exponential backoff: 1s, 2s, 4s delays between retries.
+        Total timeout of 30s is enforced via session config.
+
         Args:
             operation: Async callable to execute
             error_code: Default error code if all retries fail
@@ -80,6 +86,8 @@ class CUAClient:
             CUAClientError: If all retries fail
         """
         last_error: Optional[Exception] = None
+        # Exponential backoff delays: 1s, 2s, 4s
+        backoff_delays = [1.0, 2.0, 4.0]
 
         for attempt in range(self.config.max_retries):
             try:
@@ -91,16 +99,35 @@ class CUAClient:
                     raise
                 # Don't sleep on the last attempt
                 if attempt < self.config.max_retries - 1:
-                    await asyncio.sleep(
-                        self.config.retry_delay * (attempt + 1)  # Linear backoff
+                    delay = backoff_delays[attempt]
+                    log.warning(
+                        "CUA request failed, retrying (attempt %d/%d) after %.1fs: %s",
+                        attempt + 1,
+                        self.config.max_retries,
+                        delay,
+                        str(e),
                     )
+                    await asyncio.sleep(delay)
             except aiohttp.ClientError as e:
                 last_error = e
                 # Connection errors are transient, retry
                 if attempt < self.config.max_retries - 1:
-                    await asyncio.sleep(self.config.retry_delay * (attempt + 1))
+                    delay = backoff_delays[attempt]
+                    log.warning(
+                        "CUA connection error, retrying (attempt %d/%d) after %.1fs: %s",
+                        attempt + 1,
+                        self.config.max_retries,
+                        delay,
+                        str(e),
+                    )
+                    await asyncio.sleep(delay)
 
         # All retries exhausted
+        log.error(
+            "All %d retries exhausted for CUA request: %s",
+            self.config.max_retries,
+            last_error,
+        )
         if isinstance(last_error, CUAClientError):
             raise last_error
         raise CUAClientError(

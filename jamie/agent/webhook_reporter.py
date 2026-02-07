@@ -1,5 +1,6 @@
 """Webhook status reporter for CUA agent."""
 
+import asyncio
 from typing import Optional
 import aiohttp
 from datetime import datetime
@@ -8,6 +9,12 @@ from jamie.shared.models import StatusUpdate, StreamStatus
 from jamie.shared.logging import get_logger
 
 log = get_logger(__name__)
+
+# Retry configuration
+MAX_RETRIES = 3
+TOTAL_TIMEOUT = 30  # seconds
+# Exponential backoff delays: 1s, 2s, 4s
+BACKOFF_DELAYS = [1.0, 2.0, 4.0]
 
 
 class WebhookReporter:
@@ -19,7 +26,8 @@ class WebhookReporter:
     
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+            timeout = aiohttp.ClientTimeout(total=TOTAL_TIMEOUT)
+            self._session = aiohttp.ClientSession(timeout=timeout)
         return self._session
     
     async def close(self) -> None:
@@ -34,7 +42,13 @@ class WebhookReporter:
         error_code: Optional[str] = None,
         details: Optional[dict] = None,
     ) -> bool:
-        """Send status update to webhook. Returns True if successful."""
+        """Send status update to webhook with retry logic.
+        
+        Uses exponential backoff: 1s, 2s, 4s delays between retries.
+        Max 3 retries with 30s total timeout.
+        
+        Returns True if successful.
+        """
         
         if not self.webhook_url:
             log.debug("no_webhook_url", session_id=session_id)
@@ -55,26 +69,60 @@ class WebhookReporter:
             details=details,
         )
         
-        try:
-            session = await self._get_session()
-            async with session.post(
-                self.webhook_url,
-                json=update.model_dump(mode="json"),
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                if resp.status == 200:
-                    log.info("webhook_sent", session_id=session_id, status=status)
-                    return True
-                else:
+        last_error: Optional[Exception] = None
+        
+        for attempt in range(MAX_RETRIES):
+            try:
+                session = await self._get_session()
+                async with session.post(
+                    self.webhook_url,
+                    json=update.model_dump(mode="json"),
+                ) as resp:
+                    if resp.status == 200:
+                        log.info("webhook_sent", session_id=session_id, status=status)
+                        return True
+                    else:
+                        # Non-200 response - retry if we have attempts left
+                        last_error = Exception(f"HTTP {resp.status}")
+                        if attempt < MAX_RETRIES - 1:
+                            delay = BACKOFF_DELAYS[attempt]
+                            log.warning(
+                                "webhook_failed_retrying",
+                                session_id=session_id,
+                                status_code=resp.status,
+                                attempt=attempt + 1,
+                                max_retries=MAX_RETRIES,
+                                delay=delay,
+                            )
+                            await asyncio.sleep(delay)
+                        else:
+                            log.warning(
+                                "webhook_failed",
+                                session_id=session_id,
+                                status_code=resp.status,
+                            )
+            except Exception as e:
+                last_error = e
+                if attempt < MAX_RETRIES - 1:
+                    delay = BACKOFF_DELAYS[attempt]
                     log.warning(
-                        "webhook_failed",
+                        "webhook_error_retrying",
                         session_id=session_id,
-                        status_code=resp.status,
+                        error=str(e),
+                        attempt=attempt + 1,
+                        max_retries=MAX_RETRIES,
+                        delay=delay,
                     )
-                    return False
-        except Exception as e:
-            log.error("webhook_error", session_id=session_id, error=str(e))
-            return False
+                    await asyncio.sleep(delay)
+                else:
+                    log.error(
+                        "webhook_error",
+                        session_id=session_id,
+                        error=str(e),
+                        attempts_exhausted=True,
+                    )
+        
+        return False
     
     async def __aenter__(self) -> "WebhookReporter":
         return self
