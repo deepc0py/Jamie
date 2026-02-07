@@ -1,5 +1,6 @@
 """Jamie Discord bot package."""
 
+from .cua_client import CUAClient, CUAClientConfig, CUAClientError
 from .url_patterns import (
     StreamingService,
     ParsedURL,
@@ -9,6 +10,9 @@ from .url_patterns import (
 )
 
 __all__ = [
+    "CUAClient",
+    "CUAClientConfig",
+    "CUAClientError",
     "StreamingService",
     "ParsedURL",
     "parse_url",
