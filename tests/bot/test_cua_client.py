@@ -321,7 +321,7 @@ class TestCUAClientRetry:
 
     @pytest.mark.asyncio
     async def test_retry_on_transient_error(self):
-        """Client should retry on transient errors."""
+        """Client should retry on transient errors (aiohttp.ClientError)."""
         config = CUAClientConfig(max_retries=3, retry_delay=0.01)
         client = CUAClient(config)
         
@@ -331,10 +331,8 @@ class TestCUAClientRetry:
             nonlocal call_count
             call_count += 1
             if call_count < 3:
-                raise CUAClientError(
-                    code=ErrorCode.CUA_UNAVAILABLE,
-                    message="Transient error",
-                )
+                # Use aiohttp.ClientError which is always retried
+                raise aiohttp.ClientError("Connection refused")
             return HealthResponse(status="healthy", version="1.0.0", active_sessions=0)
         
         result = await client._retry(mock_operation)
@@ -376,10 +374,8 @@ class TestCUAClientRetry:
         async def mock_operation():
             nonlocal call_count
             call_count += 1
-            raise CUAClientError(
-                code=ErrorCode.CUA_UNAVAILABLE,
-                message="Always fails",
-            )
+            # Use aiohttp.ClientError which is always retried
+            raise aiohttp.ClientError("Always fails")
         
         with pytest.raises(CUAClientError):
             await client._retry(mock_operation)
