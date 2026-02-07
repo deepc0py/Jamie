@@ -55,6 +55,7 @@ agent = [
 
 [project.scripts]
 jamie-bot = "jamie.bot.main:main"
+jamie-agent = "jamie.agent.main:main"
 
 [build-system]
 requires = ["hatchling"]
